@@ -8,12 +8,12 @@ import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSFunctionDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.squareup.kotlinpoet.ClassName
-import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.MemberName
 import com.squareup.kotlinpoet.ParameterSpec
+import com.squareup.kotlinpoet.buildCodeBlock
 import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
 import com.squareup.kotlinpoet.withIndent
@@ -60,29 +60,28 @@ class RouteProcessor(
     }
 
     private fun FunSpec.Builder.addComposeBlock(destinations: List<KSFunctionDeclaration>) = apply {
-        addCode(
-            CodeBlock.builder().apply {
-                destinations.forEach { destination ->
+        addCode(buildCodeBlock {
+            destinations.forEach { destination ->
 
-                    val annotation = destination
-                        .annotations
-                        .find { it.shortName.asString() == "Route" }
+                val annotation = destination
+                    .annotations
+                    .find { it.shortName.asString() == "Route" }
 
-                    val navArgs = annotation
-                        ?.arguments
-                        ?.find { it.name?.asString() == "navArgs" }
-                        ?.value as KSType
+                val navArgs = annotation
+                    ?.arguments
+                    ?.find { it.name?.asString() == "navArgs" }
+                    ?.value as KSType
 
-                    val unsupportedNavTypes = navArgs.getUnsupportedParameters()
+                val unsupportedNavTypes = navArgs.getUnsupportedParameters()
 
-                    if (unsupportedNavTypes.isNotEmpty()) {
+                if (unsupportedNavTypes.isNotEmpty()) {
+                    addStatement(
+                        "%M<%T>(",
+                        MemberName("androidx.navigation.compose", "composable"),
+                        navArgs.toTypeName()
+                    )
 
-                        addStatement(
-                            "%M<%T>(",
-                            MemberName("androidx.navigation.compose", "composable"),
-                            navArgs.toTypeName()
-                        )
-                        indent()
+                    withIndent {
                         addStatement("typeMap = mapOf(")
 
                         withIndent {
@@ -99,35 +98,35 @@ class RouteProcessor(
                         }
 
                         addStatement(")")
-
-                        unindent()
-                        addStatement(") { entry ->")
-                    } else {
-                        addStatement(
-                            "%M<%T> { entry ->",
-                            MemberName("androidx.navigation.compose", "composable"),
-                            navArgs.toTypeName()
-                        )
                     }
 
-                    withIndent {
-                        addStatement(
-                            "%M(entry.%M<%T>(), navController)",
-                            MemberName(
-                                destination.packageName.asString(),
-                                destination.simpleName.asString()
-                            ),
-                            MemberName(
-                                "androidx.navigation",
-                                "toRoute"
-                            ),
-                            navArgs.toTypeName()
-                        )
-                    }
-                    addStatement("}")
+                    addStatement(") { entry ->")
+                } else {
+                    addStatement(
+                        "%M<%T> { entry ->",
+                        MemberName("androidx.navigation.compose", "composable"),
+                        navArgs.toTypeName()
+                    )
                 }
-            }.build()
-        )
+
+                withIndent {
+                    addStatement(
+                        "%M(entry.%M<%T>(), navController)",
+                        MemberName(
+                            destination.packageName.asString(),
+                            destination.simpleName.asString()
+                        ),
+                        MemberName(
+                            "androidx.navigation",
+                            "toRoute"
+                        ),
+                        navArgs.toTypeName()
+                    )
+                }
+
+                addStatement("}")
+            }
+        })
     }
 
     private fun KSType.getUnsupportedParameters() = (declaration as KSClassDeclaration)
